@@ -26,8 +26,13 @@ type Block struct {
 }
 
 type Blockchain struct {
-	Blocks []Block
+	Blocks  []Block
+	Mempool []Transaction
 }
+
+const (
+	difficulty = 4
+)
 
 func calculateHash(index int, timestamp string, transactions []Transaction, prevHash string, nonce int) string {
 	transactionsJSON, _ := json.Marshal(transactions)
@@ -91,22 +96,30 @@ func isValidBlockchain(blockchain Blockchain, difficulty int) bool {
 	return true
 }
 
+func (bc *Blockchain) addTransaction(tx Transaction) {
+	bc.Mempool = append(bc.Mempool, tx)
+}
+
+func (bc *Blockchain) minePendingTransactions(difficulty int) {
+	for len(bc.Mempool) > 0 {
+		newBlock := mineBlock(bc.Blocks[len(bc.Blocks)-1], bc.Mempool, difficulty)
+		bc.Blocks = append(bc.Blocks, newBlock)
+		bc.Mempool = bc.Mempool[1:len(bc.Mempool)]
+		fmt.Printf("Block %d mined from mempool! Hash: %s\n", newBlock.Index, newBlock.Hash)
+	}
+
+	fmt.Println("Any transaction pending...")
+}
+
 func main() {
 	blockchain := Blockchain{Blocks: []Block{createGenesisBlock()}}
-	difficulty := 4
 
-	transaction1 := []Transaction{{Sender: "Alice", Receiver: "Bob", Amount: 10}}
-	transaction2 := []Transaction{{Sender: "Bob", Receiver: "Alice", Amount: 5}}
+	blockchain.addTransaction(Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10})
+	blockchain.addTransaction(Transaction{Sender: "Bob", Receiver: "Alice", Amount: 5})
 
-	newBlock1 := mineBlock(blockchain.Blocks[len(blockchain.Blocks)-1], transaction1, difficulty)
-	blockchain.Blocks = append(blockchain.Blocks, newBlock1)
-	fmt.Printf("Block %d mined! hash: %s\n", newBlock1.Index, newBlock1.Hash)
+	blockchain.minePendingTransactions(difficulty)
 
-	newBlock2 := mineBlock(blockchain.Blocks[len(blockchain.Blocks)-1], transaction2, difficulty)
-	blockchain.Blocks = append(blockchain.Blocks, newBlock2)
-	fmt.Printf("Block %d mined! hash: %s\n", newBlock2.Index, newBlock2.Hash)
-
-        fmt.Print("\n\nBlockchain:", blockchain, "\n\n")
+	fmt.Print("\n\nBlockchain:", blockchain, "\n\n")
 
 	if isValidBlockchain(blockchain, difficulty) {
 		fmt.Println("Valid blockchain")
