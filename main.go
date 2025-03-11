@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -39,7 +38,7 @@ func mineBlock(prevBlock Block, data string, difficulty int) Block {
 	for {
 		hash = calculateHash(index, timestamp, data, prevBlock.Hash, nonce)
 		if strings.HasPrefix(hash, target) {
-			break
+			break 
 		}
 		nonce++
 	}
@@ -58,13 +57,45 @@ func createGenesisBlock() Block {
 	return mineBlock(Block{Index: 0, Hash: "0"}, "Genesis Block", 4)
 }
 
+func isValidBlockchain(blockchain Blockchain, difficulty int) bool {
+	for i := 1; i < len(blockchain.Blocks); i++ {
+		prevBlock := blockchain.Blocks[i-1]
+		currentBlock := blockchain.Blocks[i]
+
+		if currentBlock.Index != prevBlock.Index+1 {
+			return false
+		}
+
+		if currentBlock.PrevHash != prevBlock.Hash {
+			return false
+		}
+
+		calculatedHash := calculateHash(currentBlock.Index, currentBlock.Timestamp, currentBlock.Data, currentBlock.PrevHash, currentBlock.Nonce)
+		if currentBlock.Hash != calculatedHash {
+			return false
+		}
+
+		target := strings.Repeat("0", difficulty)
+		if !strings.HasPrefix(currentBlock.Hash, target) {
+			return false
+		}
+	}
+	return true
+}
+
 func main() {
 	blockchain := Blockchain{Blocks: []Block{createGenesisBlock()}}
-	difficulty := 4
+	difficulty := 4 
 
 	for i := 1; i <= 5; i++ {
 		newBlock := mineBlock(blockchain.Blocks[len(blockchain.Blocks)-1], fmt.Sprintf("Block %d", i), difficulty)
 		blockchain.Blocks = append(blockchain.Blocks, newBlock)
-		fmt.Printf("Bloco %d minerado! Hash: %s\n", newBlock.Index, newBlock.Hash)
+		fmt.Printf("Block %d mined! Hash: %s\n", newBlock.Index, newBlock.Hash)
+	}
+
+	if isValidBlockchain(blockchain, difficulty) {
+		fmt.Println("Valid blockchain")
+	} else {
+		fmt.Println("Invalid blockchain")
 	}
 }
