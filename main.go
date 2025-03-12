@@ -1,19 +1,24 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
 )
 
 type Transaction struct {
-	Sender   string
-	Receiver string
-	Amount   int64
+	Sender    string
+	Receiver  string
+	Amount    int64
+	Signature string
 }
 
 type Block struct {
@@ -100,6 +105,38 @@ func (bc *Blockchain) addTransaction(tx Transaction) {
 	bc.Mempool = append(bc.Mempool, tx)
 }
 
+func generateKeyPair() (*ecdsa.PrivateKey, *ecdsa.PublicKey) {
+	if privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader); err != nil {
+		panic(err)
+	} else {
+		return privateKey, &privateKey.PublicKey
+	}
+}
+
+func signTransaction(tx Transaction, privateKey *ecdsa.PrivateKey) string {
+	txHash := sha256.Sum256([]byte(tx.Sender + tx.Receiver + fmt.Sprintf("%d", tx.Amount)))
+	if r, s, err := ecdsa.Sign(rand.Reader, privateKey, txHash[:]); err != nil {
+		panic(err)
+	} else {
+		sig := r.Text(16) + ":" + s.Text(16)
+		return sig
+	}
+}
+
+func verifyTransaction(tx Transaction, publicKey *ecdsa.PublicKey) bool {
+	parts := strings.Split(tx.Signature, ":")
+	if len(parts) != 2 {
+		return false
+	}
+
+	var r, s big.Int
+	r.SetString(parts[0], 16)
+	s.SetString(parts[1], 16)
+	txHash := sha256.Sum256([]byte(tx.Sender + tx.Receiver + fmt.Sprintf("%d", tx.Amount)))
+
+	return ecdsa.Verify(publicKey, txHash[:], &r, &s)
+}
+
 func (bc *Blockchain) minePendingTransactions(difficulty int) {
 	for len(bc.Mempool) > 0 {
 		newBlock := mineBlock(bc.Blocks[len(bc.Blocks)-1], bc.Mempool, difficulty)
@@ -114,16 +151,29 @@ func (bc *Blockchain) minePendingTransactions(difficulty int) {
 func main() {
 	blockchain := Blockchain{Blocks: []Block{createGenesisBlock()}}
 
-	blockchain.addTransaction(Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10})
-	blockchain.addTransaction(Transaction{Sender: "Bob", Receiver: "Alice", Amount: 5})
+	privateKey, _ := generateKeyPair()
+	_, publicKey2 := generateKeyPair()
 
-	blockchain.minePendingTransactions(difficulty)
+	tx := Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10}
+        tx.Signature = signTransaction(tx, privateKey)
 
-	fmt.Print("\n\nBlockchain:", blockchain, "\n\n")
+        if verifyTransaction(tx, publicKey2) {
+                fmt.Println("valid transaction")
+                blockchain.addTransaction(tx)
+        } else {
+                fmt.Println("invalid transaction")
+        }
 
-	if isValidBlockchain(blockchain, difficulty) {
-		fmt.Println("Valid blockchain")
-	} else {
-		fmt.Println("Invalid blockchain")
-	}
+	// blockchain.addTransaction(Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10})
+	// blockchain.addTransaction(Transaction{Sender: "Bob", Receiver: "Alice", Amount: 5})
+
+	// blockchain.minePendingTransactions(difficulty)
+
+	// fmt.Print("\n\nBlockchain:", blockchain, "\n\n")
+
+	// if isValidBlockchain(blockchain, difficulty) {
+	// 	fmt.Println("Valid blockchain")
+	// } else {
+	// 	fmt.Println("Invalid blockchain")
+	// }
 }
