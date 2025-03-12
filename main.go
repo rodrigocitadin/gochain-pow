@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -35,9 +37,45 @@ type Blockchain struct {
 	Mempool []Transaction
 }
 
+type Peer struct {
+	Address string
+}
+
+type P2PNetwork struct {
+	Peers []Peer
+	mu    sync.Mutex
+}
+
 const (
 	difficulty = 4
 )
+
+func (p *P2PNetwork) addPeer(address string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.Peers = append(p.Peers, Peer{Address: address})
+}
+
+func (p *P2PNetwork) broadcast(data interface{}) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	message, _ := json.Marshal(data)
+	for _, peer := range p.Peers {
+		go sendMessage(peer.Address, message)
+	}
+}
+
+func sendMessage(address string, message []byte) {
+	conn, err := net.Dial("tpc", address)
+	if err != nil {
+		fmt.Println("Error connecting to peer:", err)
+		return
+	}
+	defer conn.Close()
+	conn.Write(message)
+}
 
 func calculateHash(index int, timestamp string, transactions []Transaction, prevHash string, nonce int) string {
 	transactionsJSON, _ := json.Marshal(transactions)
@@ -150,19 +188,24 @@ func (bc *Blockchain) minePendingTransactions(difficulty int) {
 
 func main() {
 	blockchain := Blockchain{Blocks: []Block{createGenesisBlock()}}
+	network := P2PNetwork{}
 
-	privateKey, _ := generateKeyPair()
-	_, publicKey2 := generateKeyPair()
+	network.addPeer("localhost:5001")
+	network.addPeer("localhost:5002")
+
+	privateKey, publicKey := generateKeyPair()
 
 	tx := Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10}
-        tx.Signature = signTransaction(tx, privateKey)
+	tx.Signature = signTransaction(tx, privateKey)
 
-        if verifyTransaction(tx, publicKey2) {
-                fmt.Println("valid transaction")
-                blockchain.addTransaction(tx)
-        } else {
-                fmt.Println("invalid transaction")
-        }
+	if verifyTransaction(tx, publicKey) {
+		fmt.Println("valid transaction")
+		blockchain.addTransaction(tx)
+		network.broadcast(tx)
+		fmt.Println("new transaction broadcast to peers")
+	} else {
+		fmt.Println("invalid transaction")
+	}
 
 	// blockchain.addTransaction(Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10})
 	// blockchain.addTransaction(Transaction{Sender: "Bob", Receiver: "Alice", Amount: 5})
