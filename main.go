@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	rnd "math/rand"
 	"net"
 	"strconv"
 	"strings"
@@ -239,38 +240,53 @@ func (bc *Blockchain) minePendingTransactions(minerAddress string) {
 
 func main() {
 	blockchain := Blockchain{Blocks: []Block{createGenesisBlock()}}
-	network := P2PNetwork{}
+	minerAddress := "Miner1"
 
-	network.addPeer("localhost:5001")
-	network.addPeer("localhost:5002")
+	// Gen key pairs to users
+	users := map[string]*ecdsa.PrivateKey{}
+	publicKeys := map[string]*ecdsa.PublicKey{}
+	userNames := []string{"Alice", "Bob", "Charlie", "Dave"}
 
-	network.resolveConflicts(&blockchain)
+	for _, user := range userNames {
+		privKey, pubKey := generateKeyPair()
+		users[user] = privKey
+		publicKeys[user] = pubKey
+		fmt.Printf("Keys generated to %s\n", user)
+	}
 
-	// privateKey, _ := generateKeyPair()
+	// Init miner in background
+	go func() {
+		for {
+			time.Sleep(10 * time.Second) // Interval to mine new block
+			blockchain.minePendingTransactions(minerAddress)
+		}
+	}()
 
-	// tx := Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10}
-	// tx.Signature = signTransaction(tx, privateKey)
+	// Gen infinite random signed transactions
+	go func() {
+		for {
+			time.Sleep(3 * time.Second) // Interval between sending new transactions
 
-	// blockchain.addTransaction(tx)
-	// blockchain.addTransaction(tx)
-	// blockchain.addTransaction(tx)
+			sender := userNames[rnd.Intn(len(userNames))]
+			receiver := userNames[rnd.Intn(len(userNames))]
+			if sender != receiver {
+				amount := int64(rnd.Intn(10) + 1)
+				tx := Transaction{Sender: sender, Receiver: receiver, Amount: amount}
 
-	// blockchain.minePendingTransactions("Miner1")
+				// Sign transaction
+				tx.Signature = signTransaction(tx, users[sender])
 
-	// fmt.Println("Blockchain afer mining:", blockchain.Blocks)
+				// Verify sign before adding to mempool
+				if verifyTransaction(tx, publicKeys[sender]) {
+					blockchain.addTransaction(tx)
+					fmt.Printf("New signed and validated transaction: %s → %s | Value: %d\n", sender, receiver, tx.Amount)
+				} else {
+					fmt.Println("Error: Invalid transaction detected")
+				}
+			}
+		}
+	}()
 
-	// network.broadcast(tx)
-
-	// blockchain.addTransaction(Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10})
-	// blockchain.addTransaction(Transaction{Sender: "Bob", Receiver: "Alice", Amount: 5})
-
-	// blockchain.minePendingTransactions(difficulty)
-
-	// fmt.Print("\n\nBlockchain:", blockchain, "\n\n")
-
-	// if isValidBlockchain(blockchain, difficulty) {
-	// 	fmt.Println("Valid blockchain")
-	// } else {
-	// 	fmt.Println("Invalid blockchain")
-	// }
+	// Keeps the program running
+	select {}
 }
