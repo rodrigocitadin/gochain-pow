@@ -47,7 +47,8 @@ type P2PNetwork struct {
 }
 
 const (
-	difficulty = 4
+	difficulty   = 4
+	miningReward = 1
 )
 
 func (p *P2PNetwork) addPeer(address string) {
@@ -84,7 +85,7 @@ func calculateHash(index int, timestamp string, transactions []Transaction, prev
 	return hex.EncodeToString(hash[:])
 }
 
-func mineBlock(prevBlock Block, transactions []Transaction, difficulty int) Block {
+func mineBlock(prevBlock Block, transactions []Transaction) Block {
 	timestamp := time.Now().String()
 	index := prevBlock.Index + 1
 	var nonce int
@@ -110,10 +111,10 @@ func mineBlock(prevBlock Block, transactions []Transaction, difficulty int) Bloc
 }
 
 func createGenesisBlock() Block {
-	return mineBlock(Block{Index: 0, Hash: "0"}, []Transaction{}, 4)
+	return mineBlock(Block{Index: 0, Hash: "0"}, []Transaction{})
 }
 
-func isValidBlockchain(blockchain Blockchain, difficulty int) bool {
+func isValidBlockchain(blockchain Blockchain) bool {
 	for i := 1; i < len(blockchain.Blocks); i++ {
 		prevBlock := blockchain.Blocks[i-1]
 		currentBlock := blockchain.Blocks[i]
@@ -175,37 +176,43 @@ func verifyTransaction(tx Transaction, publicKey *ecdsa.PublicKey) bool {
 	return ecdsa.Verify(publicKey, txHash[:], &r, &s)
 }
 
-func (bc *Blockchain) minePendingTransactions(difficulty int) {
-	for len(bc.Mempool) > 0 {
-		newBlock := mineBlock(bc.Blocks[len(bc.Blocks)-1], bc.Mempool, difficulty)
-		bc.Blocks = append(bc.Blocks, newBlock)
-		bc.Mempool = bc.Mempool[1:len(bc.Mempool)]
-		fmt.Printf("Block %d mined from mempool! Hash: %s\n", newBlock.Index, newBlock.Hash)
+func (bc *Blockchain) minePendingTransactions(minerAddress string) {
+	if len(bc.Mempool) == 0 {
+		fmt.Println("Any transaction pending...")
+		return
 	}
 
-	fmt.Println("Any transaction pending...")
+	rewardTx := Transaction{Sender: "System", Receiver: minerAddress, Amount: miningReward}
+	bc.Mempool = append(bc.Mempool, rewardTx)
+
+	newBlock := mineBlock(bc.Blocks[len(bc.Blocks)-1], bc.Mempool)
+	bc.Blocks = append(bc.Blocks, newBlock)
+	bc.Mempool = []Transaction{}
+
+	fmt.Printf("Block %d mined from transactions mempool! Hash: %s\n", newBlock.Index, newBlock.Hash)
 }
 
 func main() {
 	blockchain := Blockchain{Blocks: []Block{createGenesisBlock()}}
-	network := P2PNetwork{}
 
-	network.addPeer("localhost:5001")
-	network.addPeer("localhost:5002")
+	// network := P2PNetwork{}
+	// network.addPeer("localhost:5001")
+	// network.addPeer("localhost:5002")
 
-	privateKey, publicKey := generateKeyPair()
+	privateKey, _ := generateKeyPair()
 
 	tx := Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10}
 	tx.Signature = signTransaction(tx, privateKey)
 
-	if verifyTransaction(tx, publicKey) {
-		fmt.Println("valid transaction")
-		blockchain.addTransaction(tx)
-		network.broadcast(tx)
-		fmt.Println("new transaction broadcast to peers")
-	} else {
-		fmt.Println("invalid transaction")
-	}
+	blockchain.addTransaction(tx)
+	blockchain.addTransaction(tx)
+	blockchain.addTransaction(tx)
+
+	blockchain.minePendingTransactions("Miner1")
+
+	fmt.Println("Blockchain afer mining:", blockchain.Blocks)
+
+	// network.broadcast(tx)
 
 	// blockchain.addTransaction(Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10})
 	// blockchain.addTransaction(Transaction{Sender: "Bob", Receiver: "Alice", Amount: 5})
