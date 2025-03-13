@@ -51,6 +51,51 @@ const (
 	miningReward = 1
 )
 
+func (bc *Blockchain) replaceChain(newBlocks []Block) bool {
+	if len(newBlocks) <= len(bc.Blocks) {
+		return false
+	}
+
+	if !isValidBlockchain(Blockchain{Blocks: newBlocks}) {
+		return false
+	}
+
+	bc.Blocks = newBlocks
+	fmt.Println("Blockchain replaced by the largest chain")
+	return true
+}
+
+func (p *P2PNetwork) resolveConflicts(bc *Blockchain) {
+	for _, peer := range p.Peers {
+		go func(peer Peer) {
+			blocks := requestBlockchain(peer.Address)
+			if blocks != nil {
+				bc.replaceChain(blocks)
+			}
+		}(peer)
+	}
+}
+
+func requestBlockchain(address string) []Block {
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		fmt.Println("Error connecting to peer:", err)
+		return nil
+	}
+	defer conn.Close()
+
+	fmt.Fprintf(conn, "GET_CHAIN\n")
+	decoder := json.NewDecoder(conn)
+
+	var newBlocks []Block
+	if err := decoder.Decode(&newBlocks); err != nil {
+		fmt.Println("Error decoding blockchain:", err)
+		return nil
+	}
+
+	return newBlocks
+}
+
 func (p *P2PNetwork) addPeer(address string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -194,23 +239,25 @@ func (bc *Blockchain) minePendingTransactions(minerAddress string) {
 
 func main() {
 	blockchain := Blockchain{Blocks: []Block{createGenesisBlock()}}
+	network := P2PNetwork{}
 
-	// network := P2PNetwork{}
-	// network.addPeer("localhost:5001")
-	// network.addPeer("localhost:5002")
+	network.addPeer("localhost:5001")
+	network.addPeer("localhost:5002")
 
-	privateKey, _ := generateKeyPair()
+	network.resolveConflicts(&blockchain)
 
-	tx := Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10}
-	tx.Signature = signTransaction(tx, privateKey)
+	// privateKey, _ := generateKeyPair()
 
-	blockchain.addTransaction(tx)
-	blockchain.addTransaction(tx)
-	blockchain.addTransaction(tx)
+	// tx := Transaction{Sender: "Alice", Receiver: "Bob", Amount: 10}
+	// tx.Signature = signTransaction(tx, privateKey)
 
-	blockchain.minePendingTransactions("Miner1")
+	// blockchain.addTransaction(tx)
+	// blockchain.addTransaction(tx)
+	// blockchain.addTransaction(tx)
 
-	fmt.Println("Blockchain afer mining:", blockchain.Blocks)
+	// blockchain.minePendingTransactions("Miner1")
+
+	// fmt.Println("Blockchain afer mining:", blockchain.Blocks)
 
 	// network.broadcast(tx)
 
