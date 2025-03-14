@@ -240,9 +240,44 @@ func (bc *Blockchain) minePendingTransactions(minerAddress string) {
 
 func main() {
 	blockchain := Blockchain{Blocks: []Block{createGenesisBlock()}}
-	minerAddress := "Miner1"
+	p2pNetwork := P2PNetwork{}
 
-	// Gen key pairs to users
+	p2pNetwork.addPeer("localhost:5001")
+	p2pNetwork.addPeer("localhost:5002")
+	p2pNetwork.addPeer("localhost:5003")
+
+	go startMiner(&blockchain, "Miner")
+	go simulateTransactions(&blockchain, &p2pNetwork)
+	go startConflictResolver(&blockchain, &p2pNetwork)
+
+	ln, err := net.Listen("tcp", ":5000")
+	if err != nil {
+		fmt.Println("Error starting server:", err)
+		return
+	}
+	defer ln.Close()
+
+	fmt.Println("Server started on port 5000")
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			fmt.Println("Connection error:", err)
+			continue
+		}
+
+		go handleConnection(conn, &blockchain)
+	}
+}
+
+func startMiner(blockchain *Blockchain, minerAddress string) {
+	for {
+		time.Sleep(10 * time.Second)
+		blockchain.minePendingTransactions(minerAddress)
+	}
+}
+
+func simulateTransactions(blockchain *Blockchain, p2pNetwork *P2PNetwork) {
 	users := map[string]*ecdsa.PrivateKey{}
 	publicKeys := map[string]*ecdsa.PublicKey{}
 	userNames := []string{"Alice", "Bob", "Charlie", "Dave"}
@@ -254,39 +289,43 @@ func main() {
 		fmt.Printf("Keys generated to %s\n", user)
 	}
 
-	// Init miner in background
-	go func() {
-		for {
-			time.Sleep(10 * time.Second) // Interval to mine new block
-			blockchain.minePendingTransactions(minerAddress)
-		}
-	}()
+	for {
+		time.Sleep(3 * time.Second)
 
-	// Gen infinite random signed transactions
-	go func() {
-		for {
-			time.Sleep(3 * time.Second) // Interval between sending new transactions
+		sender := userNames[rnd.Intn(len(userNames))]
+		receiver := userNames[rnd.Intn(len(userNames))]
+		if sender != receiver {
+			amount := int64(rnd.Intn(10) + 1)
 
-			sender := userNames[rnd.Intn(len(userNames))]
-			receiver := userNames[rnd.Intn(len(userNames))]
-			if sender != receiver {
-				amount := int64(rnd.Intn(10) + 1)
-				tx := Transaction{Sender: sender, Receiver: receiver, Amount: amount}
+			tx := Transaction{Sender: sender, Receiver: receiver, Amount: amount}
+			tx.Signature = signTransaction(tx, users[sender])
 
-				// Sign transaction
-				tx.Signature = signTransaction(tx, users[sender])
-
-				// Verify sign before adding to mempool
-				if verifyTransaction(tx, publicKeys[sender]) {
-					blockchain.addTransaction(tx)
-					fmt.Printf("New signed and validated transaction: %s → %s | Value: %d\n", sender, receiver, tx.Amount)
-				} else {
-					fmt.Println("Error: Invalid transaction detected")
-				}
+			if verifyTransaction(tx, publicKeys[sender]) {
+				blockchain.addTransaction(tx)
+				p2pNetwork.broadcast(tx)
+				fmt.Printf("New signed and validated transaction: %s → %s | Value: %d\n", sender, receiver, tx.Amount)
+			} else {
+				fmt.Println("Error: Invalid transaction detected")
 			}
 		}
-	}()
+	}
+}
 
-	// Keeps the program running
-	select {}
+func startConflictResolver(blockchain *Blockchain, p2pNetwork *P2PNetwork) {
+	for {
+		time.Sleep(30 * time.Second)
+		p2pNetwork.resolveConflicts(blockchain)
+	}
+}
+
+func handleConnection(conn net.Conn, blockchain *Blockchain) {
+	defer conn.Close()
+
+	var request string
+	fmt.Fscanf(conn, "%s", &request)
+
+	if request == "GET_CHAIN" {
+		encoder := json.NewEncoder(conn)
+		encoder.Encode(blockchain.Blocks)
+	}
 }
